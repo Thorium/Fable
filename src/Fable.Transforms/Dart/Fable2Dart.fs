@@ -220,6 +220,11 @@ module Util =
 
         match entRef.FullName, genArgs with
         | Types.enum_, _ -> Integer
+        // F# Quotation types are modelled dynamically by the quotation runtime,
+        // so map them to `dynamic` (the runtime returns plain tagged objects).
+        | Types.fsharpExpr, _
+        | Types.fsharpExprGeneric, _
+        | Types.fsharpVar, _ -> Dynamic
         // List without generics is same as List<dynamic>
         | Types.array, _ -> List Dynamic
         | "System.Tuple`1", _ -> transformTupleType com ctx genArgs
@@ -2192,9 +2197,10 @@ module Util =
             ],
             None
 
-        | Fable.Quote _ ->
-            addError com [] None "Quotations are not yet supported for Dart target"
-            [], None
+        | Fable.Quote(body, _isTyped, _r) ->
+            // Lower the quoted body to runtime calls that build the quotation AST,
+            // then transform like any other expression (mirrors PHP/Python/JS).
+            transform com ctx returnStrategy (QuotationEmitter.emitQuotedExpr com body)
 
     let getLocalFunctionGenericParams
         (_com: IDartCompiler)
