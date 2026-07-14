@@ -3192,7 +3192,10 @@ let taskBuilderB (com: ICompiler) (ctx: Context) r t (i: CallInfo) (thisArg: Exp
         Helper.LibCall(com, "Task", "delay", t, args, i.SignatureArgTypes, ?loc = r)
         |> Some
     | "Zero", _, _ ->
-        Helper.LibCall(com, "Task", "zero", t, args, i.SignatureArgTypes, ?loc = r)
+        // A body that does not end in `return` is just `return ()`. Its declared
+        // type is TaskCode<_,_>, whose generics are FSharp.Core resumable-code
+        // internals, so use unit here to keep them out of the emitted call.
+        Helper.LibCall(com, "Task", "zero", Fable.Unit, args, i.SignatureArgTypes, ?loc = r)
         |> Some
     | _ -> None
 
@@ -3202,7 +3205,8 @@ let taskBuilderHP (com: ICompiler) (ctx: Context) r t (i: CallInfo) (thisArg: Ex
         Helper.LibCall(com, "Task", "bind", t, args, i.SignatureArgTypes, ?loc = r)
         |> Some
     | "TaskBuilderBase.Zero", _, _ ->
-        Helper.LibCall(com, "Task", "zero", t, args, i.SignatureArgTypes, ?loc = r)
+        // see the Zero comment in taskBuilderB above
+        Helper.LibCall(com, "Task", "zero", Fable.Unit, args, i.SignatureArgTypes, ?loc = r)
         |> Some
     | meth, Some callee, _ -> makeInstanceCall r t i callee meth args |> Some
     | meth, None, _ ->
