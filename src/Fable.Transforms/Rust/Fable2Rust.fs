@@ -2370,6 +2370,12 @@ module Util =
             | UnaryOperator.UnaryNotBitwise -> mkNotExpr expr // ?loc=range)
             | UnaryOperator.UnaryAddressOf -> expr |> mkAddrOfExpr
 
+        | Fable.Binary(BinaryOperator.BinaryExponent, leftExpr, rightExpr) ->
+            // Rust has no `**` operator; F# (**) is floating-point exponentiation.
+            let left = transformLeaveContext com ctx None leftExpr |> maybeAddParens leftExpr
+            let right = transformLeaveContext com ctx None rightExpr |> maybeAddParens rightExpr
+            mkMethodCallExpr "powf" None left [ right ]
+
         | Fable.Binary(op, leftExpr, rightExpr) ->
             let kind =
                 match op with
@@ -2387,7 +2393,7 @@ module Util =
                 | BinaryOperator.BinaryMultiply -> Rust.BinOpKind.Mul
                 | BinaryOperator.BinaryDivide -> Rust.BinOpKind.Div
                 | BinaryOperator.BinaryModulus -> Rust.BinOpKind.Rem
-                | BinaryOperator.BinaryExponent -> failwithf "BinaryExponent not supported. TODO: implement with pow."
+                | BinaryOperator.BinaryExponent -> failwith "unreachable: BinaryExponent handled above"
                 | BinaryOperator.BinaryOrBitwise -> Rust.BinOpKind.BitOr
                 | BinaryOperator.BinaryXorBitwise -> Rust.BinOpKind.BitXor
                 | BinaryOperator.BinaryAndBitwise -> Rust.BinOpKind.BitAnd
@@ -3360,10 +3366,11 @@ module Util =
             function
             | Fable.Operation(Fable.Binary(BinaryEqual, left, right), _, _, _) ->
                 match left, right with
-                | _, Fable.Value((Fable.CharConstant _ | Fable.StringConstant _ | Fable.NumberConstant _), _) ->
-                    Some(left, right)
-                | Fable.Value((Fable.CharConstant _ | Fable.StringConstant _ | Fable.NumberConstant _), _), _ ->
-                    Some(right, left)
+                // NOTE: StringConstant is intentionally excluded — Rust match patterns can't
+                // represent a fable-library string (it lowers to a `string("...")` call), so
+                // string matches must use the if/else decision-tree path with real `==`.
+                | _, Fable.Value((Fable.CharConstant _ | Fable.NumberConstant _), _) -> Some(left, right)
+                | Fable.Value((Fable.CharConstant _ | Fable.NumberConstant _), _), _ -> Some(right, left)
                 | _ -> None
             | Fable.Test(expr, Fable.OptionTest isSome, r) ->
                 let evalExpr =
