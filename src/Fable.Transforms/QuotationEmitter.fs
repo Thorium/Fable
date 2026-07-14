@@ -376,7 +376,11 @@ and private emitQuotedValue (com: Compiler) (kind: ValueKind) (_r: SourceLocatio
     | StringConstant s -> Helper.LibCall(com, "quotation", "mkValue", Any, [ makeStrConst s; makeStrConst "string" ])
 
     | UnitConstant ->
-        Helper.LibCall(com, "quotation", "mkValue", Any, [ Value(UnitConstant, None); makeStrConst "unit" ])
+        // A unit carries no data. Emit a null node (as for Null) rather than mkValue with a
+        // literal unit: statically typed targets can't pass a unit/void literal as an
+        // argument (Dart lowers `()` to a `void` expression; Rust similarly can't box it
+        // meaningfully). mkNull produces a valid ExprValue(<sentinel>, "unit").
+        mkNullExpr com "unit"
 
     | Null _ -> mkNullExpr com "null"
 

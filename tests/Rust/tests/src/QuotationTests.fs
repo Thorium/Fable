@@ -32,6 +32,21 @@ let ``Evaluate a value`` () =
     let r = LeafExpressionConverter.EvaluateQuotation <@ 42 @>
     unbox<int> r |> equal 42
 
+// Typed Expr<'T> matched directly (not routed through an (e: Expr) helper): the type
+// argument is erased so the quotation shares the untyped FSharpExpr representation.
+
+[<Fact>]
+let ``Typed quotation matches Value directly`` () =
+    match <@ 42 @> with
+    | Value(v, _) -> unbox<int> v |> equal 42
+    | _ -> failwith "Expected Value"
+
+[<Fact>]
+let ``Typed quotation matches Lambda directly`` () =
+    match <@ fun (x: int) -> x + 1 @> with
+    | Lambda(v, _) -> v.Name |> equal "x"
+    | _ -> failwith "Expected Lambda"
+
 [<Fact>]
 let ``Lambda quotation exposes the parameter name`` () =
     lambdaVarName <@ fun (x: int) -> x + 1 @> |> equal "x"

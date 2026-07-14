@@ -93,11 +93,7 @@ let tests() =
         | _ -> failwith "Expected NewTuple"
 
     testCase "Sequential quotation" <| fun () ->
-        // NOTE: the canonical suite uses `<@ (); 42 @>`, but a bare unit literal
-        // lowers to `util.ignore()` (a Dart `void` expression) which cannot be
-        // passed as the `mkValue` argument. `ignore 0` is a unit-typed *call*
-        // (no unit literal), exercising the same Sequential node.
-        let q = <@ ignore 0; 42 @>
+        let q = <@ (); 42 @>
         match q with
         | Sequential(_, Value(v, _)) -> equal 42 (v :?> int)
         | _ -> failwith "Expected Sequential"

@@ -1184,6 +1184,13 @@ module TypeInfo =
             // built-in types
             | Replacements.Util.Builtin kind -> transformBuiltinType com ctx typ kind
 
+            // Typed quotation Expr<'T>: erase the type argument so it shares the untyped
+            // FSharpExpr runtime representation. This lets a typed quotation (e.g. <@ 42 @>)
+            // be matched directly against the Patterns active patterns, which operate on
+            // the untyped Expr.
+            | Fable.DeclaredType(entRef, _) when entRef.FullName = Types.fsharpExprGeneric ->
+                transformEntityType com ctx { entRef with FullName = Types.fsharpExpr } []
+
             // other declared types
             | Fable.DeclaredType(entRef, genArgs) -> transformEntityType com ctx entRef genArgs
 
