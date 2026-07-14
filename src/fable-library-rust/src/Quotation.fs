@@ -44,6 +44,13 @@ let mkCall (instance: FSharpExpr) (method: string) (args: FSharpExpr[]) (declari
     ExprCall(instance, method, args, declaringType)
 
 let mkSequential (first: FSharpExpr) (second: FSharpExpr) : FSharpExpr = ExprSequential(first, second)
+
+// A correctly-typed empty argument array. Rust is statically typed, so an empty
+// obj[] built by the emitter won't unify with the FSharpExpr[] parameters of
+// mkCall/mkNewUnion/mkNewTuple (zero-arg calls like property getters, nullary
+// union cases). The emitter routes empty expr-arrays here for the Rust target.
+let emptyExprArray () : FSharpExpr[] = [||]
+
 let mkNewTuple (elements: FSharpExpr[]) : FSharpExpr = ExprNewTuple elements
 
 let mkNewUnion (typeName: string) (tag: int) (fields: FSharpExpr[]) : FSharpExpr = ExprNewUnion(typeName, tag, fields)

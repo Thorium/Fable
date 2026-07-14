@@ -5,10 +5,12 @@ open Microsoft.FSharp.Quotations
 open Microsoft.FSharp.Quotations.Patterns
 open Microsoft.FSharp.Linq.RuntimeHelpers
 
-// NOTE: quotations are deconstructed through an untyped `Expr` parameter. Matching a
-// typed `Expr<'T>` binding directly is not yet supported on Rust (see quotation notes),
-// and `obj` values are not bound out of patterns (only structure / Var names / arithmetic
-// evaluation are exercised).
+// NOTE: quotations are deconstructed through an untyped `Expr` parameter (helpers below
+// take `(e: Expr)`); matching a typed `Expr<'T>` binding directly is not yet supported on
+// Rust (see quotation notes). Binding the boxed `obj` payload out of a Value node now works
+// (the getZeroObj fix); the type element is bound as a wildcard since the runtime models it
+// as a string rather than System.Type. Deconstructing array-valued nodes (NewTuple /
+// NewUnionCase / NewRecord) is still limited on Rust (see note below).
 
 let private lambdaVarName (e: Expr) =
     match e with
@@ -27,8 +29,6 @@ let private isIfThenElseNode (e: Expr) =
 
 [<Fact>]
 let ``Evaluate a value`` () =
-    // Value nodes are exercised via evaluate: deconstructing them directly on Rust is
-    // limited (the obj payload trips getZero; the type element is System.Type, not string).
     let r = LeafExpressionConverter.EvaluateQuotation <@ 42 @>
     unbox<int> r |> equal 42
 
@@ -73,3 +73,108 @@ let ``Evaluate lambda application`` () =
 let ``Evaluate let-bound lambda`` () =
     let r = LeafExpressionConverter.EvaluateQuotation <@ let f = (fun x -> x + 1) in f 41 @>
     unbox<int> r |> equal 42
+
+// --- Parity expansion (toward the Python 27) ---
+// Binding the boxed obj payload out of a Value node previously tripped getZero on Rust;
+// the getZeroObj / active-pattern fixes should now allow these. Type element bound as
+// wildcard (`Value(v, _)`) to sidestep the System.Type-vs-string model difference.
+
+let private valueInt (e: Expr) =
+    match e with
+    | Value(v, _) -> unbox<int> v
+    | _ -> -1
+
+let private valueBool (e: Expr) =
+    match e with
+    | Value(v, _) -> unbox<bool> v
+    | _ -> false
+
+let private valueStr (e: Expr) =
+    match e with
+    | Value(v, _) -> unbox<string> v
+    | _ -> "?"
+
+let private letBoundInt (e: Expr) =
+    match e with
+    | Let(_, Value(v, _), _) -> unbox<int> v
+    | _ -> -1
+
+let private seqSecondInt (e: Expr) =
+    match e with
+    | Sequential(_, Value(v, _)) -> unbox<int> v
+    | _ -> -1
+
+let private newTupleLen (e: Expr) =
+    match e with
+    | NewTuple(exprs) -> List.length exprs
+    | _ -> -1
+
+let private isAppLambdaValue (e: Expr) =
+    match e with
+    | Application(Lambda _, Value _) -> true
+    | _ -> false
+
+let private lambdaVarBodyName (e: Expr) =
+    match e with
+    | Lambda(v, Var v2) -> v.Name + "/" + v2.Name
+    | _ -> "?"
+
+let private isLambdaIfThenElse (e: Expr) =
+    match e with
+    | Lambda(_, IfThenElse(_, _, _)) -> true
+    | _ -> false
+
+[<Fact>]
+let ``Value node binds int payload`` () =
+    valueInt <@ 42 @> |> equal 42
+
+[<Fact>]
+let ``Value node binds bool payload`` () =
+    valueBool <@ true @> |> equal true
+
+[<Fact>]
+let ``Value node binds string payload`` () =
+    valueStr <@ "hello" @> |> equal "hello"
+
+[<Fact>]
+let ``Let binds value node payload`` () =
+    letBoundInt <@ let x = 5 in x @> |> equal 5
+
+[<Fact>]
+let ``Sequential exposes second value payload`` () =
+    seqSecondInt <@ (); 42 @> |> equal 42
+
+[<Fact>]
+let ``NewTuple exposes element count`` () =
+    newTupleLen <@ (1, 2, 3) @> |> equal 3
+
+[<Fact>]
+let ``Application of lambda to value deconstructs`` () =
+    isAppLambdaValue <@ (fun x -> x) 42 @> |> equal true
+
+[<Fact>]
+let ``Lambda body Var refers to the parameter`` () =
+    lambdaVarBodyName <@ fun x -> x @> |> equal "x/x"
+
+[<Fact>]
+let ``Option match in quotation lowers to IfThenElse`` () =
+    isLambdaIfThenElse <@ fun (o: int option) -> match o with Some v -> v | None -> 0 @> |> equal true
+
+[<Fact>]
+let ``Literal match in quotation lowers to IfThenElse`` () =
+    isLambdaIfThenElse <@ fun (x: int) -> match x with 0 -> "zero" | _ -> "other" @> |> equal true
+
+[<Fact>]
+let ``Evaluate multiplication`` () =
+    let r = LeafExpressionConverter.EvaluateQuotation <@ 6 * 7 @>
+    unbox<int> r |> equal 42
+
+[<Fact>]
+let ``Evaluate nested let bindings`` () =
+    let r = LeafExpressionConverter.EvaluateQuotation <@ let x = 3 in let y = 4 in x * y @>
+    unbox<int> r |> equal 12
+
+[<Fact>]
+let ``Evaluate nested lambda`` () =
+    let r = LeafExpressionConverter.EvaluateQuotation <@ (fun x -> (fun y -> x + y)) 3 4 @>
+    unbox<int> r |> equal 7

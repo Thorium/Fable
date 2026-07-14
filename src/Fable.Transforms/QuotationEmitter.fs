@@ -128,7 +128,7 @@ let rec emitQuotedExpr (com: Compiler) (expr: Expr) : Expr =
         let methodExpr = makeStrConst methodName
         let declTypeExpr = makeStrConst declaringType
 
-        let argExprs = info.Args |> List.map (emitQuotedExpr com) |> makeArray Any
+        let argExprs = mkExprArray com (info.Args |> List.map (emitQuotedExpr com))
 
         Helper.LibCall(com, "quotation", "mkCall", Any, [ instanceExpr; methodExpr; argExprs; declTypeExpr ])
 
@@ -189,7 +189,7 @@ let rec emitQuotedExpr (com: Compiler) (expr: Expr) : Expr =
         let methodExpr = makeStrConst opName
         let instanceExpr = mkNullExpr com "null"
 
-        let argExprs = args |> List.map (emitQuotedExpr com) |> makeArray Any
+        let argExprs = mkExprArray com (args |> List.map (emitQuotedExpr com))
 
         // Operators have no declaring type; pass an empty string.
         Helper.LibCall(com, "quotation", "mkCall", Any, [ instanceExpr; methodExpr; argExprs; makeStrConst "" ])
@@ -214,7 +214,7 @@ let rec emitQuotedExpr (com: Compiler) (expr: Expr) : Expr =
                 | ListTail -> "get_Tail"
                 | _ -> "get_Value"
 
-            let emptyArgs = makeArray Any []
+            let emptyArgs = mkExprArray com []
 
             Helper.LibCall(
                 com,
@@ -294,7 +294,7 @@ let rec emitQuotedExpr (com: Compiler) (expr: Expr) : Expr =
                 [
                     mkNullExpr com "null"
                     makeStrConst "op_Equality"
-                    makeArray Any [ tagExpr; tagConst ]
+                    mkExprArray com [ tagExpr; tagConst ]
                     makeStrConst ""
                 ]
             )
@@ -313,7 +313,7 @@ let rec emitQuotedExpr (com: Compiler) (expr: Expr) : Expr =
                 [
                     target
                     makeStrConst methodName
-                    makeArray Any []
+                    mkExprArray com []
                     makeStrConst "Microsoft.FSharp.Core.FSharpOption`1"
                 ]
             )
@@ -332,7 +332,7 @@ let rec emitQuotedExpr (com: Compiler) (expr: Expr) : Expr =
                 [
                     target
                     makeStrConst methodName
-                    makeArray Any []
+                    mkExprArray com []
                     makeStrConst "Microsoft.FSharp.Collections.FSharpList`1"
                 ]
             )
@@ -345,7 +345,7 @@ let rec emitQuotedExpr (com: Compiler) (expr: Expr) : Expr =
                 [
                     target
                     makeStrConst "op_TypeTest"
-                    makeArray Any []
+                    mkExprArray com []
                     makeStrConst (typeToString typ)
                 ]
             )
@@ -384,7 +384,7 @@ and private emitQuotedValue (com: Compiler) (kind: ValueKind) (_r: SourceLocatio
         Helper.LibCall(com, "quotation", "mkValue", Any, [ Value(CharConstant c, None); makeStrConst "char" ])
 
     | NewTuple(values, _isStruct) ->
-        let emittedValues = values |> List.map (emitQuotedExpr com) |> makeArray Any
+        let emittedValues = mkExprArray com (values |> List.map (emitQuotedExpr com))
 
         Helper.LibCall(com, "quotation", "mkNewTuple", Any, [ emittedValues ])
 
@@ -394,7 +394,7 @@ and private emitQuotedValue (com: Compiler) (kind: ValueKind) (_r: SourceLocatio
             | Some ent -> ent.FullName
             | None -> entRef.FullName
 
-        let emittedValues = values |> List.map (emitQuotedExpr com) |> makeArray Any
+        let emittedValues = mkExprArray com (values |> List.map (emitQuotedExpr com))
 
         Helper.LibCall(com, "quotation", "mkNewUnion", Any, [ makeStrConst entName; makeIntConst tag; emittedValues ])
 
@@ -404,7 +404,7 @@ and private emitQuotedValue (com: Compiler) (kind: ValueKind) (_r: SourceLocatio
             | Some ent -> ent.FSharpFields |> List.map (fun f -> makeStrConst f.Name) |> makeArray Any
             | None -> makeArray Any []
 
-        let emittedValues = values |> List.map (emitQuotedExpr com) |> makeArray Any
+        let emittedValues = mkExprArray com (values |> List.map (emitQuotedExpr com))
 
         Helper.LibCall(com, "quotation", "mkNewRecord", Any, [ fieldNames; emittedValues ])
 
@@ -481,3 +481,13 @@ and private typeToString (t: Type) : string =
 
 and private makeArray (elementType: Type) (elements: Expr list) : Expr =
     Value(NewArray(ArrayValues elements, elementType, ImmutableArray), None)
+
+// Build an array of quotation-expr children. On the statically typed Rust target an
+// empty `Any[]` won't unify with the runtime's FSharpExpr[] parameters, so route
+// empty arrays through a runtime helper that returns a correctly-typed empty array.
+// A non-empty array's element type is inferred from its (FSharpExpr-returning) items,
+// and dynamically typed targets are unaffected either way.
+and private mkExprArray (com: Compiler) (elements: Expr list) : Expr =
+    match elements with
+    | [] when com.Options.Language = Rust -> Helper.LibCall(com, "quotation", "emptyExprArray", Any, [])
+    | _ -> makeArray Any elements
